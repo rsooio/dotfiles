@@ -1,0 +1,53 @@
+#!/bin/bash
+# Send a Windows toast notification from WSL2.
+#
+# Usage:
+#   notify "title" "message"
+#   notify "title" "message" "C:\path\to\image.png"
+
+set -euo pipefail
+
+if [[ $# -lt 2 ]]; then
+  echo "Usage: notify <title> <message> [image]" >&2
+  echo "  image - optional, Windows path to a .png/.jpg" >&2
+  exit 1
+fi
+
+TITLE="$1"
+MESSAGE="$2"
+IMAGE="${3:-}"
+
+PS1_PATH=$(mktemp /tmp/notify_XXXXXX.ps1)
+trap "rm -f '$PS1_PATH'" EXIT
+
+if [[ -n "$IMAGE" ]]; then
+  cat > "$PS1_PATH" <<'PSEOF'
+param([string]$Title, [string]$Message, [string]$Image)
+
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastImageAndText02)
+$img = $template.GetElementsByTagName('image')
+$img.Item(0).SetAttribute('src', $Image) > $null
+$textNodes = $template.GetElementsByTagName('text')
+$textNodes.Item(0).AppendChild($template.CreateTextNode($Title)) > $null
+$textNodes.Item(1).AppendChild($template.CreateTextNode($Message)) > $null
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Microsoft.WSL').Show($toast)
+PSEOF
+  powershell.exe -ExecutionPolicy Bypass -File "$(wslpath -w "$PS1_PATH")" \
+    -Title "$TITLE" -Message "$MESSAGE" -Image "$IMAGE" 2>&1
+else
+  cat > "$PS1_PATH" <<'PSEOF'
+param([string]$Title, [string]$Message)
+
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$textNodes = $template.GetElementsByTagName('text')
+$textNodes.Item(0).AppendChild($template.CreateTextNode($Title)) > $null
+$textNodes.Item(1).AppendChild($template.CreateTextNode($Message)) > $null
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Microsoft.WSL').Show($toast)
+PSEOF
+  powershell.exe -ExecutionPolicy Bypass -File "$(wslpath -w "$PS1_PATH")" \
+    -Title "$TITLE" -Message "$MESSAGE" 2>&1
+fi
