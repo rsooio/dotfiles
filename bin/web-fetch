@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: web-fetch <url> [--json]" >&2
+  exit 1
+}
+
+args=()
+json=false
+
+for arg in "$@"; do
+  case $arg in
+    --json) json=true ;;
+    *) args+=("$arg") ;;
+  esac
+done
+
+[[ ${#args[@]} -eq 1 ]] || usage
+
+body=$(jq -nc --arg url "${args[0]}" '{url: $url}')
+
+resp=$(curl -sS --fail-with-body https://api.deepseek.com/v1/tools/fetch \
+  -H "Authorization: Bearer ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is not set}" \
+  -H "Content-Type: application/json" \
+  -d "$body") || { echo "$resp" >&2; exit 1; }
+
+if $json; then
+  echo "$resp"
+  exit
+fi
+
+jq -r '
+  .title as $title
+  | if $title == "" or (.content | startswith("# " + $title))
+    then .content
+    else "# \($title)\n\n\(.content)"
+    end
+' <<<"$resp"

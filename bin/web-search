@@ -1,0 +1,73 @@
+#!/bin/bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: web-search <query> [--count <number>] [--ip [ip_address]] [--content] [--json]" >&2
+  exit 1
+}
+
+is_ip() {
+  [[ $1 =~ ^[0-9a-fA-F.:]*[.:][0-9a-fA-F.:]*$ ]]
+}
+
+query=()
+count=10
+ip=""
+content=false
+json=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --count)
+      count=${2:?--count requires a number}
+      shift
+      ;;
+    --ip)
+      if is_ip "${2:-}"; then
+        ip=$2
+        shift
+      else
+        ip=$(curl -fsS https://ifconfig.me)
+      fi
+      ;;
+    --content) content=true ;;
+    --json) json=true ;;
+    *) query+=("$1") ;;
+  esac
+  shift
+done
+
+[[ ${#query[@]} -gt 0 ]] || usage
+
+body=$(jq -nc \
+  --arg query "${query[*]}" \
+  --argjson count "$count" \
+  --arg ip "$ip" \
+  --argjson content "$content" \
+  '{query: $query, count: $count, localization: $ip, need_content: $content}')
+
+resp=$(curl -sS --fail-with-body https://api.deepseek.com/v1/tools/search \
+  -H "Authorization: Bearer ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is not set}" \
+  -H "Content-Type: application/json" \
+  -d "$body") || { echo "$resp" >&2; exit 1; }
+
+if $json; then
+  echo "$resp"
+  exit
+fi
+
+jq -r '
+  def indent: "   " + gsub("\n"; "\n   ");
+
+  .results | to_entries[]
+  | (.key + 1) as $n
+  | .value
+  | ([.site_name, .date[:10]] | map(values) | join(" · ")) as $meta
+  | "\($n). \(.title)",
+    (.url | indent),
+    (select($meta != "") | $meta | indent),
+    (.snippet | indent),
+    (select(.content != "") | "", (.content | indent)),
+    ""
+' <<<"$resp"

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: gtimg [symbol]" >&2
+  exit 1
+fi
+
+curl -s "http://qt.gtimg.cn/q=$(printf s_%s, $@)" | \
+    iconv -f gbk -t utf-8 | \
+    awk -F'~' 'NF {printf "%-4s %8.2f %+.2f%%\n", $2, $4, $6}'

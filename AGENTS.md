@@ -1,0 +1,2 @@
+- Follow YAGNI principles, and one-liner solutions
+- 保证言之有物，使用简单直接的语言风格
