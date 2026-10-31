@@ -18,21 +18,7 @@ if [[ -z "${token:-}" ]]; then
   exit 1
 fi
 
-printf '%s\n' "$token" | jq -R '
-  def decode:
-    gsub("-"; "+")
-    | gsub("_"; "/")
-    | . + ("=" * ((4 - (length % 4)) % 4))
-    | @base64d
-    | fromjson;
-
-  split(".") as $segments
-  | if ($segments | length) != 3 then
-      error("invalid JWT: expected 3 segments")
-    else
-      {
-        header: ($segments[0] | decode),
-        payload: ($segments[1] | decode)
-      }
-    end
-'
+IFS='.' read -r header payload signature <<< "$token"
+HEADER=$(echo "$header" | base64 --decode)
+PAYLOAD=$(echo "$payload" | base64 --decode)
+echo "{\"header\":$HEADER,\"payload\":$PAYLOAD}"
